@@ -1,17 +1,17 @@
 package org.jgroups.protocols;
 
-import org.jgroups.Event;
-import org.jgroups.annotations.Property;
-import org.jgroups.stack.Protocol;
-import org.jgroups.util.MessageBatch;
-import org.jgroups.util.Util;
-
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
 import java.util.concurrent.DelayQueue;
 import java.util.concurrent.Delayed;
 import java.util.concurrent.TimeUnit;
+
+import org.jgroups.Event;
+import org.jgroups.annotations.Property;
+import org.jgroups.stack.Protocol;
+import org.jgroups.util.MessageBatch;
+import org.jgroups.util.Util;
 
 
 /**
@@ -41,6 +41,8 @@ public class DELAY extends Protocol {
     @Property(description = "Keep the delay constant. By default delay time randoms between 0 and upper bound")
     protected boolean constant_delay;
 
+    private volatile boolean destroyed;
+
     protected DelayedMessageHandler delayed_message_handler;
     protected DelayQueue<DelayedMessage> delayed_messages = new DelayQueue<DelayedMessage>();
 
@@ -56,6 +58,7 @@ public class DELAY extends Protocol {
     @Override
     public void init() throws Exception {
         super.init();
+        destroyed = false;
         delayed_message_handler = new DelayedMessageHandler();
         delayed_message_handler.start();
     }
@@ -63,6 +66,7 @@ public class DELAY extends Protocol {
     @Override
     public void destroy() {
         super.destroy();
+        destroyed = true;
         if (delayed_message_handler != null)
             Util.interruptAndWaitToDie(delayed_message_handler);
     }
@@ -143,8 +147,10 @@ public class DELAY extends Protocol {
 
         @Override
         public void run() {
-            for (;;) {
+            while (!destroyed) {
                 try {
+                    // blocking wait for next message instead of busy waiting
+                    buffer.add(delayed_messages.take());
                     delayed_messages.drainTo(buffer);
                     for (DelayedMessage evt : buffer)
                         down_prot.down(evt.event);
