@@ -1229,7 +1229,7 @@ public abstract class TP extends Protocol implements DiagnosticsHandler.ProbeHan
             final MessageBatch[] batches=Util.readMessageBatch(in, multicast);
             final MessageBatch batch=batches[0], oob_batch=batches[1], internal_batch_oob=batches[2], internal_batch=batches[3];
 
-            removeAndDispatchNonBundledMessages(oob_batch, internal_batch_oob);
+//            removeAndDispatchNonBundledMessages(oob_batch, internal_batch_oob);
 
             if(oob_batch != null && !oob_batch.isEmpty()) {
                 num_oob_msgs_received+=oob_batch.size();
