@@ -9,8 +9,8 @@ import org.jgroups.util.AverageMinMax;
 import org.jgroups.util.DefaultThreadFactory;
 import org.jgroups.util.Util;
 
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.BrokenBarrierException;
+import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.locks.LockSupport;
 
 import static org.jgroups.tests.FragTest2.type;
@@ -101,16 +101,15 @@ public class BundlerStressTest {
 
     protected void sendMessages() throws Exception {
         Message[] msgs=generateMessages(num_msgs);
-        CountDownLatch latch=new CountDownLatch(1);
-        AtomicInteger index=new AtomicInteger(0);
+        CyclicBarrier barrier=new CyclicBarrier(num_senders + 1);
         Sender[] senders=new Sender[num_senders];
         for(int i=0; i < senders.length; i++) {
-            senders[i]=new Sender(latch, msgs, index);
+            senders[i]=new Sender(barrier, msgs, (i * num_msgs) / num_senders, ((i + 1) * num_msgs) / num_senders);
             senders[i].start();
         }
 
         long start=Util.micros();
-        latch.countDown(); // starts all sender threads
+        barrier.await(); // starts all sender threads
 
         for(Sender sender: senders)
             sender.join();
@@ -124,6 +123,7 @@ public class BundlerStressTest {
 
             LockSupport.parkNanos(park_time);
             if(i % 10000 == 0) {
+                System.out.printf("%d pending messages%n", pending_msgs);
                 park_time=Math.min(park_time*2, 1_000_000); // 1 ms max park time
             }
 
@@ -154,6 +154,8 @@ public class BundlerStressTest {
     protected Bundler createBundler(String bundler) {
         if(bundler == null)
             throw new IllegalArgumentException("bundler type has to be non-null");
+        if(bundler.equals("lfsa"))
+            return new LockFreeSingleArrayBundler();
         if(bundler.equals("stq"))
             return new SimplifiedTransferQueueBundler(BUFSIZE);
         if(bundler.equals("tq"))
@@ -203,27 +205,27 @@ public class BundlerStressTest {
 
 
     protected class Sender extends Thread {
-        protected final CountDownLatch latch;
+        protected final CyclicBarrier barrier;
         protected final Message[]      msgs;
-        protected final AtomicInteger  index;
         protected final AverageMinMax  send=new AverageMinMax(); // ns
+        private final int startIdx;
+        private final int endIdx;
 
-        public Sender(CountDownLatch latch, Message[] msgs, AtomicInteger index) {
-            this.latch=latch;
+        public Sender(CyclicBarrier barrier, Message[] msgs, int startIdx, int endIdx) {
+            this.barrier = barrier;
             this.msgs=msgs;
-            this.index=index;
+            this.startIdx = startIdx;
+            this.endIdx = endIdx;
         }
 
         public void run() {
             try {
-                latch.await();
+                barrier.await();
+            } catch(InterruptedException e) {
+            } catch (BrokenBarrierException e) {
+                e.printStackTrace();
             }
-            catch(InterruptedException e) {
-            }
-            while(true) {
-                int idx=index.getAndIncrement();
-                if(idx >= msgs.length)
-                    break;
+            for (int idx = startIdx; idx < endIdx; ++idx) {
                 try {
                     long start=System.nanoTime();
                     bundler.send(msgs[idx]);

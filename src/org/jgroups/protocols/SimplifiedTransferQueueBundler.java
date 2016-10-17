@@ -49,20 +49,16 @@ public class SimplifiedTransferQueueBundler extends TransferQueueBundler {
     }
 
     protected void sendBundledMessages() {
-        try {
-            _sendBundledMessages();
-        }
-        finally {
-            curr=0;
-        }
+        _sendBundledMessages();
     }
 
     protected void _sendBundledMessages() {
         int start=0;
         for(;;) {
-            for(; start < MSG_BUF_SIZE && msg_queue[start] == null; ++start) ;
+            while(start < MSG_BUF_SIZE && msg_queue[start] == null) ++start;
             if(start >= MSG_BUF_SIZE) {
                 count=0;
+                curr=0;
                 return;
             }
             Address dest=msg_queue[start].getDest();
